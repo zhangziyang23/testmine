@@ -1,7 +1,7 @@
 """Unit tests for minesweeper.py"""
 
 import unittest
-from minesweeper import create_board, flood_fill, parse_input, chord_reveal
+from minesweeper import create_board, flood_fill, parse_input, chord_reveal, is_solvable
 
 
 class TestCreateBoard(unittest.TestCase):
@@ -181,6 +181,48 @@ class TestChordReveal(unittest.TestCase):
         flagged = set()
         triggered, hit = chord_reveal(board, revealed, flagged, 3, 3, 1, 2)
         self.assertFalse(triggered)
+
+
+class TestIsSolvable(unittest.TestCase):
+    def test_solvable_board(self):
+        """
+        3x3 board, mine at (0,0). Starting from (2,2) flood-fill reveals all
+        safe cells; constraint propagation then flags (0,0). Fully solvable.
+
+        Board:
+          -1  1  0
+           1  1  0
+           0  0  0
+        """
+        board = [
+            [-1, 1, 0],
+            [1,  1, 0],
+            [0,  0, 0],
+        ]
+        mines = {(0, 0)}
+        self.assertTrue(is_solvable(board, mines, 3, 3, 2, 2))
+
+    def test_unsolvable_board(self):
+        """
+        2x3 board, mine at (1,2). After flood-fill from (0,0), cells (0,1),
+        (0,2) both indicate 1 mine in {(1,2)} but (0,2) cannot be revealed
+        without guessing which neighbour is the mine.
+
+        Board:
+          0  1  1
+          0  1  -1
+        """
+        board = [
+            [0, 1, 1],
+            [0, 1, -1],
+        ]
+        mines = {(1, 2)}
+        self.assertFalse(is_solvable(board, mines, 2, 3, 0, 0))
+
+    def test_no_mines_always_solvable(self):
+        """A board with no mines is trivially solvable from any cell."""
+        board, mines = create_board(5, 5, 0)
+        self.assertTrue(is_solvable(board, mines, 5, 5, 0, 0))
 
 
 if __name__ == "__main__":

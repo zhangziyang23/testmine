@@ -1,7 +1,7 @@
 """Unit tests for minesweeper.py"""
 
 import unittest
-from minesweeper import create_board, flood_fill, parse_input
+from minesweeper import create_board, flood_fill, parse_input, chord_reveal
 
 
 class TestCreateBoard(unittest.TestCase):
@@ -119,6 +119,68 @@ class TestParseInput(unittest.TestCase):
     def test_boundary_values(self):
         self.assertEqual(parse_input("0 0", 9, 9), ("open", 0, 0))
         self.assertEqual(parse_input("8 8", 9, 9), ("open", 8, 8))
+
+
+class TestChordReveal(unittest.TestCase):
+    def _make_board(self):
+        """
+        3x3 board:
+          -1  1  0
+           1  1  0
+           0  0  0
+        Mine at (0,0). Cell (0,1) has value 1.
+        """
+        board = [
+            [-1, 1, 0],
+            [1,  1, 0],
+            [0,  0, 0],
+        ]
+        mines = {(0, 0)}
+        return board, mines
+
+    def test_not_triggered_on_unrevealed(self):
+        board, _ = self._make_board()
+        revealed = set()
+        flagged = set()
+        triggered, hit = chord_reveal(board, revealed, flagged, 3, 3, 0, 1)
+        self.assertFalse(triggered)
+        self.assertFalse(hit)
+
+    def test_not_triggered_insufficient_flags(self):
+        board, _ = self._make_board()
+        revealed = {(0, 1)}
+        flagged = set()   # need 1 flag around (0,1) but have none
+        triggered, hit = chord_reveal(board, revealed, flagged, 3, 3, 0, 1)
+        self.assertFalse(triggered)
+
+    def test_triggered_safe(self):
+        """Flag the mine; chord should reveal remaining neighbors safely."""
+        board, _ = self._make_board()
+        revealed = {(0, 1)}
+        flagged = {(0, 0)}  # correct mine flagged
+        triggered, hit = chord_reveal(board, revealed, flagged, 3, 3, 0, 1)
+        self.assertTrue(triggered)
+        self.assertFalse(hit)
+        # (1,0), (1,1), (1,2), (0,2) should have been revealed (flood from zeros too)
+        self.assertIn((1, 0), revealed)
+        self.assertIn((1, 1), revealed)
+
+    def test_triggered_hits_mine(self):
+        """Flag the wrong cell; chord should expose the actual mine."""
+        board, _ = self._make_board()
+        revealed = {(0, 1)}
+        flagged = {(0, 2)}  # wrong flag – (0,0) is the mine
+        triggered, hit = chord_reveal(board, revealed, flagged, 3, 3, 0, 1)
+        self.assertTrue(triggered)
+        self.assertTrue(hit)
+        self.assertIn((0, 0), revealed)  # mine cell added to revealed
+
+    def test_not_triggered_on_zero_cell(self):
+        board, _ = self._make_board()
+        revealed = {(1, 2)}   # value 0 cell
+        flagged = set()
+        triggered, hit = chord_reveal(board, revealed, flagged, 3, 3, 1, 2)
+        self.assertFalse(triggered)
 
 
 if __name__ == "__main__":

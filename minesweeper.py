@@ -132,7 +132,8 @@ def parse_input(user_input, rows, cols):
 # 图形界面
 # ---------------------------------------------------------------------------
 
-CELL_SIZE = 32  # 每个格子的像素大小
+CELL_SIZE = 32  # 每个格子的默认像素大小
+_TOP_FRAME_HEIGHT = 54  # 顶部信息栏高度估算（像素）
 
 # 数字颜色
 NUMBER_COLORS = {
@@ -161,6 +162,7 @@ class MinesweeperGUI:
         self.questioned = set()
         self.first_move = True
         self.game_over = False
+        self._cell_size = CELL_SIZE  # 当前格子像素大小，随窗口缩放
 
         # 每种难度的最佳成绩（秒），key 为 (rows, cols, num_mines)
         self._best_times = self._load_best_times()
@@ -174,43 +176,45 @@ class MinesweeperGUI:
 
     def _build_ui(self):
         self.root.title("扫雷")
-        self.root.resizable(False, False)
+        self.root.resizable(True, True)
+        self.root.minsize(self.cols * 8 + 4, self.rows * 8 + _TOP_FRAME_HEIGHT)
 
         # 顶部信息栏
-        top_frame = tk.Frame(self.root, bg="#c0c0c0", pady=4)
-        top_frame.pack(fill=tk.X)
+        self._top_frame = tk.Frame(self.root, bg="#c0c0c0", pady=4)
+        self._top_frame.pack(fill=tk.X)
 
         self.mine_label = tk.Label(
-            top_frame, text="💣 000", font=("Courier", 14, "bold"),
+            self._top_frame, text="💣 000", font=("Courier", 14, "bold"),
             bg="#c0c0c0", fg="#cc0000", width=7, anchor="w"
         )
         self.mine_label.pack(side=tk.LEFT, padx=8)
 
         self.reset_btn = tk.Button(
-            top_frame, text="🙂", font=("Arial", 14),
+            self._top_frame, text="🙂", font=("Arial", 14),
             command=self._new_game, relief=tk.RAISED, bd=2,
             bg="#c0c0c0", activebackground="#a0a0a0"
         )
         self.reset_btn.pack(side=tk.LEFT, expand=True)
 
         self.time_label = tk.Label(
-            top_frame, text="⏱ 000", font=("Courier", 14, "bold"),
+            self._top_frame, text="⏱ 000", font=("Courier", 14, "bold"),
             bg="#c0c0c0", fg="#cc0000", width=7, anchor="e"
         )
         self.time_label.pack(side=tk.RIGHT, padx=8)
 
-        # 棋盘画布
+        # 棋盘画布（随窗口伸缩）
         canvas_width = self.cols * CELL_SIZE
         canvas_height = self.rows * CELL_SIZE
         self.canvas = tk.Canvas(
             self.root, width=canvas_width, height=canvas_height,
             bg="#c0c0c0", bd=2, relief=tk.SUNKEN
         )
-        self.canvas.pack()
+        self.canvas.pack(fill=tk.BOTH, expand=True)
 
         # 鼠标绑定：左键打开，右键标记
         self.canvas.bind("<Button-1>", self._on_left_click)
         self.canvas.bind("<Button-3>", self._on_right_click)
+        self.canvas.bind("<Configure>", self._on_canvas_resize)
 
         # 菜单
         menubar = tk.Menu(self.root)
@@ -253,11 +257,13 @@ class MinesweeperGUI:
         self.rows = rows
         self.cols = cols
         self.num_mines = num_mines
-        # 调整画布大小
-        self.canvas.config(
-            width=cols * CELL_SIZE,
-            height=rows * CELL_SIZE,
-        )
+        self._cell_size = CELL_SIZE
+        # 调整窗口大小以适应新难度
+        top_h = self._top_frame.winfo_height()
+        if top_h < 10:
+            top_h = _TOP_FRAME_HEIGHT  # 顶部信息栏高度估算
+        self.root.geometry(f"{cols * CELL_SIZE}x{rows * CELL_SIZE + top_h}")
+        self.root.minsize(cols * 8 + 4, rows * 8 + top_h)
         self._new_game()
 
     def _custom_difficulty(self):
@@ -281,8 +287,8 @@ class MinesweeperGUI:
 
     def _cell_from_event(self, event):
         """将鼠标坐标转换为 (row, col)."""
-        c = event.x // CELL_SIZE
-        r = event.y // CELL_SIZE
+        c = event.x // self._cell_size
+        r = event.y // self._cell_size
         if 0 <= r < self.rows and 0 <= c < self.cols:
             return r, c
         return None, None
@@ -356,6 +362,16 @@ class MinesweeperGUI:
 
         self._update_mine_label()
         self._draw_board()
+
+    def _on_canvas_resize(self, event):
+        """画布大小改变时，重新计算格子像素大小并重绘棋盘."""
+        if not self.cols or not self.rows:
+            return
+        new_size = min(event.width // self.cols, event.height // self.rows)
+        new_size = max(new_size, 1)
+        if new_size != self._cell_size:
+            self._cell_size = new_size
+            self._draw_board(show_all=self.game_over)
 
     # ------------------------------------------------------------------
     # 最佳成绩持久化
@@ -445,12 +461,14 @@ class MinesweeperGUI:
                 self._draw_cell(r, c, show_all)
 
     def _draw_cell(self, r, c, show_all=False):
-        x0 = c * CELL_SIZE
-        y0 = r * CELL_SIZE
-        x1 = x0 + CELL_SIZE
-        y1 = y0 + CELL_SIZE
-        cx = x0 + CELL_SIZE // 2
-        cy = y0 + CELL_SIZE // 2
+        cs = self._cell_size
+        x0 = c * cs
+        y0 = r * cs
+        x1 = x0 + cs
+        y1 = y0 + cs
+        cx = x0 + cs // 2
+        cy = y0 + cs // 2
+        fs = max(8, cs * 14 // 32)  # 字体大小随格子缩放
 
         if (r, c) in self.revealed or show_all:
             val = self.board[r][c]
@@ -458,7 +476,7 @@ class MinesweeperGUI:
                 # 地雷
                 bg = "#ff4444" if (r, c) in self.revealed else "#c0c0c0"
                 self.canvas.create_rectangle(x0, y0, x1, y1, fill=bg, outline="#999999")
-                self.canvas.create_text(cx, cy, text="💣", font=("Arial", 14))
+                self.canvas.create_text(cx, cy, text="💣", font=("Arial", fs))
             elif val == 0:
                 self.canvas.create_rectangle(x0, y0, x1, y1, fill="#d0d0d0", outline="#999999")
             else:
@@ -466,19 +484,19 @@ class MinesweeperGUI:
                 color = NUMBER_COLORS.get(val, "#000000")
                 self.canvas.create_text(
                     cx, cy, text=str(val),
-                    font=("Arial", 13, "bold"), fill=color
+                    font=("Arial", max(8, cs * 13 // 32), "bold"), fill=color
                 )
         elif (r, c) in self.flagged:
             self.canvas.create_rectangle(x0, y0, x1, y1, fill="#c0c0c0", outline="#808080")
             # 立体边框
             self.canvas.create_line(x0, y1, x0, y0, x1, y0, fill="#ffffff", width=2)
             self.canvas.create_line(x1, y0, x1, y1, x0, y1, fill="#808080", width=2)
-            self.canvas.create_text(cx, cy, text="🚩", font=("Arial", 14))
+            self.canvas.create_text(cx, cy, text="🚩", font=("Arial", fs))
         elif (r, c) in self.questioned:
             self.canvas.create_rectangle(x0, y0, x1, y1, fill="#c0c0c0", outline="#808080")
             self.canvas.create_line(x0, y1, x0, y0, x1, y0, fill="#ffffff", width=2)
             self.canvas.create_line(x1, y0, x1, y1, x0, y1, fill="#808080", width=2)
-            self.canvas.create_text(cx, cy, text="❓", font=("Arial", 14))
+            self.canvas.create_text(cx, cy, text="❓", font=("Arial", fs))
         else:
             # 未揭开
             self.canvas.create_rectangle(x0, y0, x1, y1, fill="#c0c0c0", outline="#808080")

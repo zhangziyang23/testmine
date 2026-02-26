@@ -103,6 +103,53 @@ def chord_reveal(board, revealed, flagged, rows, cols, r, c):
     return True, hit_mine
 
 
+def is_solvable(board, mines, rows, cols, start_r, start_c):
+    """Return True if the board can be fully solved from (start_r, start_c) without guessing.
+
+    Uses constraint propagation:
+      - If unrevealed neighbours of a cell equal its remaining mine count, all are mines.
+      - If a cell's mine count is already satisfied by flags, all other neighbours are safe.
+    """
+    revealed = set()
+    flagged = set()
+
+    flood_fill(board, revealed, rows, cols, start_r, start_c)
+
+    changed = True
+    while changed:
+        changed = False
+        for r in range(rows):
+            for c in range(cols):
+                if (r, c) not in revealed or board[r][c] <= 0:
+                    continue
+
+                unrevealed = []
+                flagged_count = 0
+                for dr in [-1, 0, 1]:
+                    for dc in [-1, 0, 1]:
+                        if dr == 0 and dc == 0:
+                            continue
+                        nr, nc = r + dr, c + dc
+                        if 0 <= nr < rows and 0 <= nc < cols:
+                            if (nr, nc) in flagged:
+                                flagged_count += 1
+                            elif (nr, nc) not in revealed:
+                                unrevealed.append((nr, nc))
+
+                remaining = board[r][c] - flagged_count
+                if remaining == len(unrevealed) and remaining > 0:
+                    for pos in unrevealed:
+                        flagged.add(pos)
+                    changed = True
+                elif remaining == 0 and unrevealed:
+                    for pos in unrevealed:
+                        flood_fill(board, revealed, rows, cols, pos[0], pos[1])
+                    changed = True
+
+    safe_cells = rows * cols - len(mines)
+    return len(revealed) == safe_cells
+
+
 def parse_input(user_input, rows, cols):
     """解析玩家输入，返回 (action, row, col) 或 None.（保留供单元测试使用）"""
     parts = user_input.strip().split()
@@ -321,10 +368,19 @@ class MinesweeperGUI:
         if (r, c) in self.flagged or (r, c) in self.revealed:
             return
 
-        # 第一次点击时保证不踩雷，启动计时器
+        # 第一次点击时保证不踩雷且棋盘可解，启动计时器
         if self.first_move:
-            while self.board[r][c] == -1:
+            _MAX_REGEN = 100
+            for _ in range(_MAX_REGEN):
+                if self.board[r][c] != -1 and is_solvable(
+                    self.board, self.mines, self.rows, self.cols, r, c
+                ):
+                    break
                 self.board, self.mines = create_board(self.rows, self.cols, self.num_mines)
+            else:
+                # 回退：至少确保首次点击不踩雷
+                while self.board[r][c] == -1:
+                    self.board, self.mines = create_board(self.rows, self.cols, self.num_mines)
             self.first_move = False
             self._start_timer()
 
